@@ -6,17 +6,17 @@ name = "examples"
 publish = false
 version = "0.1.0"
 
-[[bin]]
-name = "helloworld-server"
-path = "src/helloworld/server.rs"
-
-[[bin]]
-name = "helloworld-client"
-path = "src/helloworld/client.rs"
-
-[[bin]]
-name = "blocking-client"
-path = "src/blocking/client.rs"
+#[[bin]]
+#name = "helloworld-server"
+#path = "src/helloworld/server.rs"
+#
+#[[bin]]
+#name = "helloworld-client"
+#path = "src/helloworld/client.rs"
+#
+#[[bin]]
+#name = "blocking-client"
+#path = "src/blocking/client.rs"
 
 [[bin]]
 name = "routeguide-server"
@@ -27,172 +27,180 @@ name = "routeguide-client"
 path = "src/routeguide/client.rs"
 
 [[bin]]
-name = "authentication-client"
-path = "src/authentication/client.rs"
+name = "routeguide-rdma-server"
+path = "src/routeguide_rdma/server.rs"
 
 [[bin]]
-name = "authentication-server"
-path = "src/authentication/server.rs"
+name = "routeguide-rdma-client"
+path = "src/routeguide_rdma/client.rs"
 
-[[bin]]
-name = "load-balance-client"
-path = "src/load_balance/client.rs"
-
-[[bin]]
-name = "load-balance-server"
-path = "src/load_balance/server.rs"
-
-[[bin]]
-name = "dynamic-load-balance-client"
-path = "src/dynamic_load_balance/client.rs"
-
-[[bin]]
-name = "dynamic-load-balance-server"
-path = "src/dynamic_load_balance/server.rs"
-
-[[bin]]
-name = "tls-client"
-path = "src/tls/client.rs"
-
-[[bin]]
-name = "tls-client-rustls"
-path = "src/tls/client_rustls.rs"
-
-[[bin]]
-name = "tls-server"
-path = "src/tls/server.rs"
-
-[[bin]]
-name = "tls-server-rustls"
-path = "src/tls/server_rustls.rs"
-
-[[bin]]
-name = "tls-client-auth-server"
-path = "src/tls_client_auth/server.rs"
-
-[[bin]]
-name = "tls-client-auth-client"
-path = "src/tls_client_auth/client.rs"
-
-[[bin]]
-name = "tower-server"
-path = "src/tower/server.rs"
-
-[[bin]]
-name = "tower-client"
-path = "src/tower/client.rs"
-
-[[bin]]
-name = "timeout-server"
-path = "src/timeout/server.rs"
-
-[[bin]]
-name = "timeout-client"
-path = "src/timeout/client.rs"
-
-[[bin]]
-name = "multiplex-server"
-path = "src/multiplex/server.rs"
-
-[[bin]]
-name = "multiplex-client"
-path = "src/multiplex/client.rs"
-
-[[bin]]
-name = "gcp-client"
-path = "src/gcp/client.rs"
-
-[[bin]]
-name = "tracing-client"
-path = "src/tracing/client.rs"
-
-[[bin]]
-name = "tracing-server"
-path = "src/tracing/server.rs"
-
-[[bin]]
-name = "uds-client"
-path = "src/uds/client.rs"
-
-[[bin]]
-name = "uds-server"
-path = "src/uds/server.rs"
-
-[[bin]]
-name = "interceptor-client"
-path = "src/interceptor/client.rs"
-
-[[bin]]
-name = "interceptor-server"
-path = "src/interceptor/server.rs"
-
-[[bin]]
-name = "hyper-warp-client"
-path = "src/hyper_warp/client.rs"
-
-[[bin]]
-name = "hyper-warp-server"
-path = "src/hyper_warp/server.rs"
-
-[[bin]]
-name = "health-server"
-path = "src/health/server.rs"
-
-[[bin]]
-name = "reflection-server"
-path = "src/reflection/server.rs"
-
-[[bin]]
-name = "autoreload-server"
-path = "src/autoreload/server.rs"
-
-[[bin]]
-name = "optional-server"
-path = "src/optional/server.rs"
-
-[[bin]]
-name = "hyper-warp-multiplex-client"
-path = "src/hyper_warp_multiplex/client.rs"
-
-[[bin]]
-name = "hyper-warp-multiplex-server"
-path = "src/hyper_warp_multiplex/server.rs"
-
-[[bin]]
-name = "compression-server"
-path = "src/compression/server.rs"
-
-[[bin]]
-name = "compression-client"
-path = "src/compression/client.rs"
-
-[[bin]]
-name = "mock"
-path = "src/mock/mock.rs"
-
-[[bin]]
-name = "grpc-web-server"
-path = "src/grpc-web/server.rs"
-
-[[bin]]
-name = "grpc-web-client"
-path = "src/grpc-web/client.rs"
-
-[[bin]]
-name = "streaming-client"
-path = "src/streaming/client.rs"
-
-[[bin]]
-name = "streaming-server"
-path = "src/streaming/server.rs"
-
-[[bin]]
-name = "json-codec-client"
-path = "src/json-codec/client.rs"
-
-[[bin]]
-name = "json-codec-server"
-path = "src/json-codec/server.rs"
+#[[bin]]
+#name = "authentication-client"
+#path = "src/authentication/client.rs"
+#
+#[[bin]]
+#name = "authentication-server"
+#path = "src/authentication/server.rs"
+#
+#[[bin]]
+#name = "load-balance-client"
+#path = "src/load_balance/client.rs"
+#
+#[[bin]]
+#name = "load-balance-server"
+#path = "src/load_balance/server.rs"
+#
+#[[bin]]
+#name = "dynamic-load-balance-client"
+#path = "src/dynamic_load_balance/client.rs"
+#
+#[[bin]]
+#name = "dynamic-load-balance-server"
+#path = "src/dynamic_load_balance/server.rs"
+#
+#[[bin]]
+#name = "tls-client"
+#path = "src/tls/client.rs"
+#
+#[[bin]]
+#name = "tls-client-rustls"
+#path = "src/tls/client_rustls.rs"
+#
+#[[bin]]
+#name = "tls-server"
+#path = "src/tls/server.rs"
+#
+#[[bin]]
+#name = "tls-server-rustls"
+#path = "src/tls/server_rustls.rs"
+#
+#[[bin]]
+#name = "tls-client-auth-server"
+#path = "src/tls_client_auth/server.rs"
+#
+#[[bin]]
+#name = "tls-client-auth-client"
+#path = "src/tls_client_auth/client.rs"
+#
+#[[bin]]
+#name = "tower-server"
+#path = "src/tower/server.rs"
+#
+#[[bin]]
+#name = "tower-client"
+#path = "src/tower/client.rs"
+#
+#[[bin]]
+#name = "timeout-server"
+#path = "src/timeout/server.rs"
+#
+#[[bin]]
+#name = "timeout-client"
+#path = "src/timeout/client.rs"
+#
+#[[bin]]
+#name = "multiplex-server"
+#path = "src/multiplex/server.rs"
+#
+#[[bin]]
+#name = "multiplex-client"
+#path = "src/multiplex/client.rs"
+#
+#[[bin]]
+#name = "gcp-client"
+#path = "src/gcp/client.rs"
+#
+#[[bin]]
+#name = "tracing-client"
+#path = "src/tracing/client.rs"
+#
+#[[bin]]
+#name = "tracing-server"
+#path = "src/tracing/server.rs"
+#
+#[[bin]]
+#name = "uds-client"
+#path = "src/uds/client.rs"
+#
+#[[bin]]
+#name = "uds-server"
+#path = "src/uds/server.rs"
+#
+#[[bin]]
+#name = "interceptor-client"
+#path = "src/interceptor/client.rs"
+#
+#[[bin]]
+#name = "interceptor-server"
+#path = "src/interceptor/server.rs"
+#
+#[[bin]]
+#name = "hyper-warp-client"
+#path = "src/hyper_warp/client.rs"
+#
+#[[bin]]
+#name = "hyper-warp-server"
+#path = "src/hyper_warp/server.rs"
+#
+#[[bin]]
+#name = "health-server"
+#path = "src/health/server.rs"
+#
+#[[bin]]
+#name = "reflection-server"
+#path = "src/reflection/server.rs"
+#
+#[[bin]]
+#name = "autoreload-server"
+#path = "src/autoreload/server.rs"
+#
+#[[bin]]
+#name = "optional-server"
+#path = "src/optional/server.rs"
+#
+#[[bin]]
+#name = "hyper-warp-multiplex-client"
+#path = "src/hyper_warp_multiplex/client.rs"
+#
+#[[bin]]
+#name = "hyper-warp-multiplex-server"
+#path = "src/hyper_warp_multiplex/server.rs"
+#
+#[[bin]]
+#name = "compression-server"
+#path = "src/compression/server.rs"
+#
+#[[bin]]
+#name = "compression-client"
+#path = "src/compression/client.rs"
+#
+#[[bin]]
+#name = "mock"
+#path = "src/mock/mock.rs"
+#
+#[[bin]]
+#name = "grpc-web-server"
+#path = "src/grpc-web/server.rs"
+#
+#[[bin]]
+#name = "grpc-web-client"
+#path = "src/grpc-web/client.rs"
+#
+#[[bin]]
+#name = "streaming-client"
+#path = "src/streaming/client.rs"
+#
+#[[bin]]
+#name = "streaming-server"
+#path = "src/streaming/server.rs"
+#
+#[[bin]]
+#name = "json-codec-client"
+#path = "src/json-codec/client.rs"
+#
+#[[bin]]
+#name = "json-codec-server"
+#path = "src/json-codec/server.rs"
 
 [dependencies]
 async-stream = "0.3"

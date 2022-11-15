@@ -51,6 +51,7 @@ channel = [
 # harness = false
 
 [dependencies]
+async-rdma = { version = "0.4", path = "../async-rdma"}
 base64 = "0.13"
 bytes = "1.0"
 futures-core = {version = "0.3", default-features = false}
