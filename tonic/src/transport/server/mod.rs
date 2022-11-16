@@ -42,17 +42,7 @@ use http::{Request, Response};
 use http_body::Body as _;
 use hyper::{server::accept, Body};
 use pin_project::pin_project;
-use std::{
-    convert::Infallible,
-    fmt,
-    future::Future,
-    marker::PhantomData,
-    net::SocketAddr,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-    time::Duration,
-};
+use std::{convert::Infallible, fmt, future::Future, io, marker::PhantomData, net::SocketAddr, pin::Pin, sync::Arc, task::{Context, Poll}, time::Duration};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tower::{
     layer::util::{Identity, Stack},
@@ -61,6 +51,7 @@ use tower::{
     util::Either,
     Service, ServiceBuilder,
 };
+use async_rdma::{Rdma, RdmaBuilder};
 
 type BoxHttpBody = http_body::combinators::UnsyncBoxBody<Bytes, crate::Error>;
 type BoxService = tower::util::BoxService<Request<Body>, Response<BoxHttpBody>, crate::Error>;
@@ -596,6 +587,32 @@ impl<L> Router<L> {
             .await
     }
 
+    /// 
+    pub async fn serve_with_rdma<ResBody>(self, addr: SocketAddr, rdma_addr: SocketAddr) -> Result<(), super::Error>
+        where
+            L: Layer<Routes>,
+            L::Service: Service<Request<Body>, Response = Response<ResBody>> + Clone + Send + 'static,
+            <<L as Layer<Routes>>::Service as Service<Request<Body>>>::Future: Send + 'static,
+            <<L as Layer<Routes>>::Service as Service<Request<Body>>>::Error: Into<crate::Error> + Send,
+            ResBody: http_body::Body<Data = Bytes> + Send + 'static,
+            ResBody::Error: Into<crate::Error>,
+    {
+        // let routes_clone = self.routes.clone();
+        tokio::spawn(async move {
+            rdma_serve(rdma_addr).await
+        });
+
+        let incoming = TcpIncoming::new(addr, self.server.tcp_nodelay, self.server.tcp_keepalive)
+            .map_err(super::Error::from_source)?;
+        self.server
+            .serve_with_shutdown::<_, _, future::Ready<()>, _, _, ResBody>(
+                self.routes,
+                incoming,
+                None,
+            )
+            .await
+    }
+
     /// Consume this [`Server`] creating a future that will execute the server
     /// on [tokio]'s default executor. And shutdown when the provided signal
     /// is received.
@@ -845,4 +862,26 @@ where
 
         future::ready(Ok(svc))
     }
+}
+
+// TODO: handle this error
+async fn rdma_serve(addr: SocketAddr) -> Result<(), io::Error> {
+    let rdma = RdmaBuilder::default().listen(addr).await?;
+    rdma_serve_inner(&rdma).await?;
+    loop {
+        let rdma = rdma.listen().await?;
+        // let routes = routes.clone();
+        tokio::spawn(async move {
+            rdma_serve_inner(&rdma).await
+        });
+    }
+}
+
+// TODO: handle this error
+async fn rdma_serve_inner(rdma: &Rdma) -> Result<(), io::Error> {
+    println!("[server] connected!");
+    todo!()
+    // let (req_mr, len) = rdma.receive_with_imm().await?;
+    // let request = ;
+    // let reponse = routes.call(request).await?;
 }

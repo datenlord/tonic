@@ -19,6 +19,7 @@ pub fn generate<T: Service>(
     let methods = generate_methods(service, emit_package, proto_path, compile_well_known_types);
 
     let connect = generate_connect(&service_ident);
+    let connect_rdma = generate_connect_rdma(&service_ident);
     let service_doc = generate_doc_comments(service.comment());
 
     let package = if emit_package { service.package() } else { "" };
@@ -54,6 +55,7 @@ pub fn generate<T: Service>(
             }
 
             #connect
+            #connect_rdma
 
             impl<T> #service_ident<T>
             where
@@ -120,6 +122,21 @@ fn generate_connect(service_ident: &syn::Ident) -> TokenStream {
             {
                 let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
                 Ok(Self::new(conn))
+            }
+        }
+    }
+}
+
+#[cfg(feature = "transport")]
+fn generate_connect_rdma(service_ident: &syn::Ident) -> TokenStream {
+    quote! {
+        impl #service_ident<tonic::transport::RdmaChannel> {
+            pub async fn connect_rdma<A>(addr: A) -> Result<Self, std::io::Error>
+            where
+                A: tonic::transport::ToSocketAddrs
+            {
+                let rdma_channel = tonic::transport::RdmaChannel::new(addr).await?;
+                Ok(Self::new(rdma_channel))
             }
         }
     }
