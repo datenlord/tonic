@@ -35,6 +35,7 @@ use crate::transport::Error;
 use self::recover_error::RecoverError;
 use super::service::{GrpcTimeout, ServerIo};
 use crate::body::BoxBody;
+use async_rdma::{LocalMrReadAccess, LocalMrWriteAccess, Rdma, RdmaBuilder};
 use bytes::Bytes;
 use futures_core::Stream;
 use futures_util::{future, ready};
@@ -42,7 +43,19 @@ use http::{Request, Response};
 use http_body::Body as _;
 use hyper::{server::accept, Body};
 use pin_project::pin_project;
-use std::{convert::Infallible, fmt, future::Future, io, marker::PhantomData, net::SocketAddr, pin::Pin, sync::Arc, task::{Context, Poll}, time::Duration};
+use std::{
+    alloc::Layout,
+    convert::Infallible,
+    fmt,
+    future::Future,
+    io,
+    marker::PhantomData,
+    net::SocketAddr,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::Duration,
+};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tower::{
     layer::util::{Identity, Stack},
@@ -51,7 +64,6 @@ use tower::{
     util::Either,
     Service, ServiceBuilder,
 };
-use async_rdma::{Rdma, RdmaBuilder};
 
 type BoxHttpBody = http_body::combinators::UnsyncBoxBody<Bytes, crate::Error>;
 type BoxService = tower::util::BoxService<Request<Body>, Response<BoxHttpBody>, crate::Error>;
@@ -587,20 +599,22 @@ impl<L> Router<L> {
             .await
     }
 
-    /// 
-    pub async fn serve_with_rdma<ResBody>(self, addr: SocketAddr, rdma_addr: SocketAddr) -> Result<(), super::Error>
-        where
-            L: Layer<Routes>,
-            L::Service: Service<Request<Body>, Response = Response<ResBody>> + Clone + Send + 'static,
-            <<L as Layer<Routes>>::Service as Service<Request<Body>>>::Future: Send + 'static,
-            <<L as Layer<Routes>>::Service as Service<Request<Body>>>::Error: Into<crate::Error> + Send,
-            ResBody: http_body::Body<Data = Bytes> + Send + 'static,
-            ResBody::Error: Into<crate::Error>,
+    ///
+    pub async fn serve_with_rdma<ResBody>(
+        self,
+        addr: SocketAddr,
+        rdma_addr: SocketAddr,
+    ) -> Result<(), super::Error>
+    where
+        L: Layer<Routes>,
+        L::Service: Service<Request<Body>, Response = Response<ResBody>> + Clone + Send + 'static,
+        <<L as Layer<Routes>>::Service as Service<Request<Body>>>::Future: Send + 'static,
+        <<L as Layer<Routes>>::Service as Service<Request<Body>>>::Error: Into<crate::Error> + Send,
+        ResBody: http_body::Body<Data = Bytes> + Send + 'static,
+        ResBody::Error: Into<crate::Error>,
     {
         // let routes_clone = self.routes.clone();
-        tokio::spawn(async move {
-            rdma_serve(rdma_addr).await
-        });
+        tokio::spawn(rdma_serve(rdma_addr, self.routes.clone()));
 
         let incoming = TcpIncoming::new(addr, self.server.tcp_nodelay, self.server.tcp_keepalive)
             .map_err(super::Error::from_source)?;
@@ -865,23 +879,50 @@ where
 }
 
 // TODO: handle this error
-async fn rdma_serve(addr: SocketAddr) -> Result<(), io::Error> {
+async fn rdma_serve(addr: SocketAddr, routes: Routes) -> Result<(), io::Error> {
     let rdma = RdmaBuilder::default().listen(addr).await?;
-    rdma_serve_inner(&rdma).await?;
+    let routes_clone = routes.clone();
+    rdma_serve_inner(&rdma, routes_clone).await?;
     loop {
         let rdma = rdma.listen().await?;
-        // let routes = routes.clone();
-        tokio::spawn(async move {
-            rdma_serve_inner(&rdma).await
-        });
+        let routes = routes.clone();
+        tokio::spawn(async move { rdma_serve_inner(&rdma, routes).await });
     }
 }
 
+const MAX_MSG_LEN: usize = 512;
+
 // TODO: handle this error
-async fn rdma_serve_inner(rdma: &Rdma) -> Result<(), io::Error> {
+async fn rdma_serve_inner(rdma: &Rdma, mut routes: Routes) -> Result<(), io::Error> {
     println!("[server] connected!");
-    todo!()
-    // let (req_mr, len) = rdma.receive_with_imm().await?;
-    // let request = ;
-    // let reponse = routes.call(request).await?;
+
+    loop {
+        let (req_mr, len) = rdma.receive_with_imm().await?;
+        let len = len.unwrap() as usize;
+        let req_vec = req_mr.as_slice()[0..len].to_vec();
+
+        // deserialize
+        let idx = req_vec.iter().position(|num| *num == 32).unwrap();
+        let uri = &req_vec[0..idx];
+        let body = hyper::Body::from(req_vec[idx + 1..len].to_vec());
+        let req = http::Request::builder()
+            .method("POST")
+            .uri(uri)
+            .body(body)
+            .unwrap();
+
+        let mut resp = routes.call(req).await.unwrap();
+
+        let resp_vec = resp.data().await.unwrap().unwrap().to_vec();
+
+        let mut resp_mr = rdma
+            .alloc_local_mr(Layout::new::<[u8; MAX_MSG_LEN]>())
+            .unwrap();
+
+        let len = resp_vec.len();
+        assert!(len <= MAX_MSG_LEN);
+        resp_mr.as_mut_slice()[0..len].copy_from_slice(resp_vec.as_slice());
+        rdma.send_with_imm(&resp_mr, len as u32).await.unwrap();
+    }
+    // Ok(())
 }
