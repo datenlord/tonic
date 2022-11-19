@@ -15,7 +15,7 @@ pub struct RdmaChannel {
     rdma: Arc<Rdma>,
 }
 
-const MAX_MSG_LEN: usize = 512;
+const MAX_MSG_LEN: usize = 10240;
 
 impl RdmaChannel {
     ///
@@ -40,22 +40,11 @@ impl Service<Request<BoxBody>> for RdmaChannel {
         std::task::Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, mut req: Request<BoxBody>) -> Self::Future {
+    // TODO: handle error
+    fn call(&mut self, req: Request<BoxBody>) -> Self::Future {
         let rdma = Arc::clone(&self.rdma);
         Box::pin(async move {
-            // TODO: handle error
-            let mut req_vec = req.uri().to_string().into_bytes();
-            req_vec.push(32u8);
-            req_vec.extend(req.data().await.unwrap().unwrap().into_iter());
-
-            let mut req_mr = rdma
-                .alloc_local_mr(Layout::new::<[u8; MAX_MSG_LEN]>())
-                .unwrap();
-
-            let len = req_vec.len();
-            assert!(len <= MAX_MSG_LEN); // TODO: len > MAX_MSG_LEN
-            req_mr.as_mut_slice()[0..len].copy_from_slice(req_vec.as_slice());
-            rdma.send_with_imm(&req_mr, len as u32).await.unwrap();
+            tokio::spawn(rdma_send_req(Arc::clone(&rdma), req));
 
             // let mut start = 0;
             // loop {
@@ -79,4 +68,24 @@ impl Service<Request<BoxBody>> for RdmaChannel {
             Ok(resp)
         })
     }
+}
+
+async fn rdma_send_req(rdma: Arc<Rdma>, mut req: Request<BoxBody>) {
+    let mut req_header = req.uri().to_string().into_bytes();
+    req_header.push(32u8);
+    let len_header = req_header.len();
+    let mut req_mr = rdma
+        .alloc_local_mr(Layout::new::<[u8; MAX_MSG_LEN]>())
+        .unwrap();
+    req_mr.as_mut_slice()[0..len_header].copy_from_slice(req_header.as_slice());
+
+    let mut len = len_header;
+    while let Some(Ok(bytes)) = req.data().await {
+        let req_body = bytes.to_vec();
+        let len_body = req_body.len();
+        assert!(len + len_body <= MAX_MSG_LEN); // TODO: len > MAX_MSG_LEN
+        req_mr.as_mut_slice()[len..len + len_body].copy_from_slice(req_body.as_slice());
+        len += len_body;
+    }
+    rdma.send_with_imm(&req_mr, len as u32).await.unwrap();
 }

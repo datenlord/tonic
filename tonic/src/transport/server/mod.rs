@@ -880,7 +880,7 @@ where
 
 // TODO: handle this error
 async fn rdma_serve(addr: SocketAddr, routes: Routes) -> Result<(), io::Error> {
-    let rdma = RdmaBuilder::default().listen(addr).await?;
+    let rdma = RdmaBuilder::default().set_max_message_length(MAX_MSG_LEN).listen(addr).await?;
     let routes_clone = routes.clone();
     rdma_serve_inner(&rdma, routes_clone).await?;
     loop {
@@ -890,7 +890,7 @@ async fn rdma_serve(addr: SocketAddr, routes: Routes) -> Result<(), io::Error> {
     }
 }
 
-const MAX_MSG_LEN: usize = 512;
+const MAX_MSG_LEN: usize = 10240;
 
 // TODO: handle this error
 async fn rdma_serve_inner(rdma: &Rdma, mut routes: Routes) -> Result<(), io::Error> {
@@ -912,16 +912,16 @@ async fn rdma_serve_inner(rdma: &Rdma, mut routes: Routes) -> Result<(), io::Err
             .unwrap();
 
         let mut resp = routes.call(req).await.unwrap();
-
-        let resp_vec = resp.data().await.unwrap().unwrap().to_vec();
-
         let mut resp_mr = rdma
             .alloc_local_mr(Layout::new::<[u8; MAX_MSG_LEN]>())
             .unwrap();
-
-        let len = resp_vec.len();
-        assert!(len <= MAX_MSG_LEN);
-        resp_mr.as_mut_slice()[0..len].copy_from_slice(resp_vec.as_slice());
+        let mut len = 0;
+        while let Some(Ok(bytes)) = resp.data().await {
+            let resp_body = bytes.to_vec();
+            let len_body = resp_body.len();
+            resp_mr.as_mut_slice()[len..len + len_body].copy_from_slice(resp_body.as_slice());
+            len += len_body;
+        }
         rdma.send_with_imm(&resp_mr, len as u32).await.unwrap();
     }
     // Ok(())
