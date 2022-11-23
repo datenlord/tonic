@@ -880,28 +880,31 @@ where
 
 // TODO: handle this error
 async fn rdma_serve(addr: SocketAddr, routes: Routes) -> Result<(), io::Error> {
-    let rdma = RdmaBuilder::default().set_max_message_length(MAX_MSG_LEN).listen(addr).await?;
+    let rdma = Arc::new(
+        RdmaBuilder::default()
+            .set_max_message_length(MAX_MSG_LEN)
+            .listen(addr)
+            .await?,
+    );
     let routes_clone = routes.clone();
-    rdma_serve_inner(&rdma, routes_clone).await?;
+    tokio::spawn(rdma_serve_inner(Arc::clone(&rdma), routes_clone));
     loop {
         let rdma = rdma.listen().await?;
         let routes = routes.clone();
-        tokio::spawn(async move { rdma_serve_inner(&rdma, routes).await });
+        tokio::spawn(async move { rdma_serve_inner(Arc::new(rdma), routes).await });
     }
 }
 
 const MAX_MSG_LEN: usize = 10240;
 
 // TODO: handle this error
-async fn rdma_serve_inner(rdma: &Rdma, mut routes: Routes) -> Result<(), io::Error> {
+async fn rdma_serve_inner(rdma: Arc<Rdma>, mut routes: Routes) -> Result<(), io::Error> {
     println!("[server] connected!");
 
     loop {
         let (req_mr, len) = rdma.receive_with_imm().await?;
         let len = len.unwrap() as usize;
         let req_vec = req_mr.as_slice()[0..len].to_vec();
-
-        // deserialize
         let idx = req_vec.iter().position(|num| *num == 32).unwrap();
         let uri = &req_vec[0..idx];
         let body = hyper::Body::from(req_vec[idx + 1..len].to_vec());

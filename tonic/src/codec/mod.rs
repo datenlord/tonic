@@ -13,9 +13,9 @@ mod prost;
 use crate::Status;
 use std::io;
 
-pub(crate) use self::encode::{encode_client, encode_server};
+pub(crate) use self::encode::{encode_client, encode_rdma, encode_server};
 
-pub use self::buffer::{DecodeBuf, EncodeBuf};
+pub use self::buffer::{DecodeBuf, EncodeBuf, EncodeSlice};
 pub use self::compression::{CompressionEncoding, EnabledCompressionEncodings};
 pub use self::decode::Streaming;
 #[cfg(feature = "prost")]
@@ -58,7 +58,9 @@ pub trait Encoder {
     type Error: From<io::Error>;
 
     /// Encodes a message into the provided buffer.
-    fn encode(&mut self, item: Self::Item, dst: &mut EncodeBuf<'_>) -> Result<(), Self::Error>;
+    fn encode<B>(&mut self, item: Self::Item, dst: &mut B) -> Result<(), Self::Error>
+    where
+        B: bytes::BufMut;
 }
 
 /// Decodes gRPC message types

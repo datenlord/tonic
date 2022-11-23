@@ -1,4 +1,5 @@
 use crate::codec::compression::{CompressionEncoding, EnabledCompressionEncodings};
+use crate::transport::channel::RdmaOp;
 use crate::{
     body::BoxBody,
     client::GrpcService,
@@ -144,7 +145,7 @@ impl<T> Grpc<T> {
         codec: C,
     ) -> Result<Response<M2>, Status>
     where
-        T: GrpcService<BoxBody>,
+        T: GrpcService<BoxBody> + RdmaOp,
         T::ResponseBody: Body + Send + 'static,
         <T::ResponseBody as Body>::Error: Into<crate::Error>,
         C: Codec<Encode = M1, Decode = M2>,
@@ -163,7 +164,7 @@ impl<T> Grpc<T> {
         codec: C,
     ) -> Result<Response<M2>, Status>
     where
-        T: GrpcService<BoxBody>,
+        T: GrpcService<BoxBody> + RdmaOp,
         T::ResponseBody: Body + Send + 'static,
         <T::ResponseBody as Body>::Error: Into<crate::Error>,
         S: Stream<Item = M1> + Send + 'static,
@@ -200,7 +201,7 @@ impl<T> Grpc<T> {
         codec: C,
     ) -> Result<Response<Streaming<M2>>, Status>
     where
-        T: GrpcService<BoxBody>,
+        T: GrpcService<BoxBody> + RdmaOp,
         T::ResponseBody: Body + Send + 'static,
         <T::ResponseBody as Body>::Error: Into<crate::Error>,
         C: Codec<Encode = M1, Decode = M2>,
@@ -219,7 +220,7 @@ impl<T> Grpc<T> {
         mut codec: C,
     ) -> Result<Response<Streaming<M2>>, Status>
     where
-        T: GrpcService<BoxBody>,
+        T: GrpcService<BoxBody> + RdmaOp,
         T::ResponseBody: Body + Send + 'static,
         <T::ResponseBody as Body>::Error: Into<crate::Error>,
         S: Stream<Item = M1> + Send + 'static,
@@ -227,33 +228,40 @@ impl<T> Grpc<T> {
         M1: Send + Sync + 'static,
         M2: Send + Sync + 'static,
     {
-        let request = request
-            .map(|s| encode_client(codec.encoder(), s, self.config.send_compression_encodings))
-            .map(BoxBody::new);
+        if self.inner.is_rdma() {
+            let response = RdmaOp::call(&mut self.inner, codec.encoder(), request, path)
+                .await
+                .map_err(Status::from_error_generic)?;
+            let decoder = codec.decoder();
+            self.create_response(decoder, response)
+        } else {
+            let request = request
+                .map(|s| encode_client(codec.encoder(), s, self.config.send_compression_encodings))
+                .map(BoxBody::new);
 
-        let request = self.config.prepare_request(request, path);
+            let request = self.config.prepare_request(request, path);
 
-        let response = self
-            .inner
-            .call(request)
-            .await
-            .map_err(Status::from_error_generic)?;
+            let response = GrpcService::call(&mut self.inner, request)
+                .await
+                .map_err(Status::from_error_generic)?;
 
-        let decoder = codec.decoder();
+            let decoder = codec.decoder();
 
-        self.create_response(decoder, response)
+            self.create_response(decoder, response)
+        }
     }
 
     // Keeping this code in a separate function from Self::streaming lets functions that return the
     // same output share the generated binary code
-    fn create_response<M2>(
+    fn create_response<M2, B>(
         &self,
         decoder: impl Decoder<Item = M2, Error = Status> + Send + 'static,
-        response: http::Response<T::ResponseBody>,
+        response: http::Response<B>,
     ) -> Result<Response<Streaming<M2>>, Status>
     where
         T: GrpcService<BoxBody>,
-        T::ResponseBody: Body + Send + 'static,
+        B: Body + Send + 'static,
+        B::Error: Into<crate::Error>,
         <T::ResponseBody as Body>::Error: Into<crate::Error>,
     {
         let encoding = CompressionEncoding::from_encoding_header(

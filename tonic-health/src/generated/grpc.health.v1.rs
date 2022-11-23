@@ -56,7 +56,7 @@ pub mod health_client {
     }
     impl<T> HealthClient<T>
     where
-        T: tonic::client::GrpcService<tonic::body::BoxBody>,
+        T: tonic::client::GrpcService<tonic::body::BoxBody> + tonic::transport::RdmaOp,
         T::Error: Into<StdError>,
         T::ResponseBody: Body<Data = Bytes> + Send + 'static,
         <T::ResponseBody as Body>::Error: Into<StdError> + Send,
@@ -69,25 +69,25 @@ pub mod health_client {
             let inner = tonic::client::Grpc::with_origin(inner, origin);
             Self { inner }
         }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> HealthClient<InterceptedService<T, F>>
-        where
-            F: tonic::service::Interceptor,
-            T::ResponseBody: Default,
-            T: tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<
-                    <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
-                >,
-            >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + Send + Sync,
-        {
-            HealthClient::new(InterceptedService::new(inner, interceptor))
-        }
+        // pub fn with_interceptor<F>(
+        //     inner: T,
+        //     interceptor: F,
+        // ) -> HealthClient<InterceptedService<T, F>>
+        // where
+        //     F: tonic::service::Interceptor,
+        //     T::ResponseBody: Default,
+        //     T: tonic::codegen::Service<
+        //         http::Request<tonic::body::BoxBody>,
+        //         Response = http::Response<
+        //             <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
+        //         >,
+        //     >,
+        //     <T as tonic::codegen::Service<
+        //         http::Request<tonic::body::BoxBody>,
+        //     >>::Error: Into<StdError> + Send + Sync,
+        // {
+        //     HealthClient::new(InterceptedService::new(inner, interceptor))
+        // }
         /// Compress requests with the given encoding.
         ///
         /// This requires the server to support it otherwise it might respond with an

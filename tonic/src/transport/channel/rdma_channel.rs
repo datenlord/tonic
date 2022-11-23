@@ -1,10 +1,13 @@
 use crate::{
     body::BoxBody,
+    codec::{encode_rdma, Encoder},
     transport::{self, BoxFuture},
+    Status,
 };
 use async_rdma::{LocalMrReadAccess, LocalMrWriteAccess, Rdma};
-use http::{Request, Response};
-use http_body::Body;
+use bytes::BufMut;
+use futures_core::Stream;
+use http::{uri::PathAndQuery, Request, Response};
 use std::{alloc::Layout, io, sync::Arc};
 use tokio::net::ToSocketAddrs;
 use tower::Service;
@@ -41,51 +44,74 @@ impl Service<Request<BoxBody>> for RdmaChannel {
     }
 
     // TODO: handle error
-    fn call(&mut self, req: Request<BoxBody>) -> Self::Future {
-        let rdma = Arc::clone(&self.rdma);
-        Box::pin(async move {
-            tokio::spawn(rdma_send_req(Arc::clone(&rdma), req));
-
-            // let mut start = 0;
-            // loop {
-            //     if start >= len {
-            //         break;
-            //     }
-            //     let step = len.min(MAX_MSG_LEN);
-            //     req_mr.as_mut_slice()[start..start + step]
-            //         .copy_from_slice(&req_vec[start..start + step]);
-            //     rdma.send_with_imm(&req_mr, step as u32).await.unwrap();
-            //     start += step;
-            // }
-
-            let (resp_mr, len) = rdma.receive_with_imm().await.unwrap();
-            let len = len.unwrap() as usize;
-            let resp_vec = resp_mr.as_slice()[0..len].to_vec();
-
-            // deserialize
-            let body = hyper::Body::from(resp_vec);
-            let resp = http::Response::builder().body(body).unwrap();
-            Ok(resp)
-        })
+    fn call(&mut self, _req: Request<BoxBody>) -> Self::Future {
+        unreachable!()
     }
 }
 
-async fn rdma_send_req(rdma: Arc<Rdma>, mut req: Request<BoxBody>) {
-    let mut req_header = req.uri().to_string().into_bytes();
-    req_header.push(32u8);
-    let len_header = req_header.len();
-    let mut req_mr = rdma
-        .alloc_local_mr(Layout::new::<[u8; MAX_MSG_LEN]>())
-        .unwrap();
-    req_mr.as_mut_slice()[0..len_header].copy_from_slice(req_header.as_slice());
+///
+#[async_trait::async_trait]
+pub trait RdmaOp {
+    ///
+    async fn call<T, U>(
+        &mut self,
+        encoder: T,
+        req: crate::Request<U>,
+        path: PathAndQuery,
+    ) -> Result<Response<hyper::Body>, transport::Error>
+    where
+        T: Encoder<Error = Status> + Send,
+        U: Stream<Item = T::Item> + Send;
+    ///
+    fn is_rdma(&self) -> bool;
+}
 
-    let mut len = len_header;
-    while let Some(Ok(bytes)) = req.data().await {
-        let req_body = bytes.to_vec();
-        let len_body = req_body.len();
-        assert!(len + len_body <= MAX_MSG_LEN); // TODO: len > MAX_MSG_LEN
-        req_mr.as_mut_slice()[len..len + len_body].copy_from_slice(req_body.as_slice());
-        len += len_body;
+#[async_trait::async_trait]
+impl RdmaOp for RdmaChannel {
+    async fn call<T, U>(
+        &mut self,
+        encoder: T,
+        req: crate::Request<U>,
+        path: PathAndQuery,
+    ) -> Result<Response<hyper::Body>, transport::Error>
+    where
+        T: Encoder<Error = Status> + Send,
+        U: Stream<Item = T::Item> + Send,
+    {
+        // alloc rdma mr
+        let mut req_mr = self
+            .rdma
+            .alloc_local_mr(Layout::new::<[u8; MAX_MSG_LEN]>())
+            .unwrap();
+
+        // encode `req` into mr
+        let mut buf = unsafe { req_mr.as_mut_slice_unchecked() };
+        // path
+        let path = path.as_str();
+        let mut len = path.len();
+        buf[0..len].copy_from_slice(path.as_bytes());
+        unsafe { buf.advance_mut(len) };
+        buf.put_u8(32u8);
+        len += 1;
+        // body
+        len += encode_rdma(encoder, req.into_inner(), buf).await;
+
+        // send mr
+        self.rdma.send_with_imm(&req_mr, len as u32).await.unwrap();
+
+        // recv mr
+        let (resp_mr, len) = self.rdma.receive_with_imm().await.unwrap();
+        let len = len.unwrap() as usize;
+        let resp_vec = resp_mr.as_slice()[0..len].to_vec();
+
+        // from mr to resp
+        let body = hyper::Body::from(resp_vec);
+        let resp = http::Response::builder().body(body).unwrap();
+
+        Ok(resp)
     }
-    rdma.send_with_imm(&req_mr, len as u32).await.unwrap();
+
+    fn is_rdma(&self) -> bool {
+        true
+    }
 }

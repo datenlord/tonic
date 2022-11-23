@@ -240,3 +240,33 @@ where
         Poll::Ready(self.project().state.trailers())
     }
 }
+
+pub(crate) async fn encode_rdma<T, U>(mut encoder: T, source: U, mut buf: &mut [u8]) -> usize
+where
+    T: Encoder<Error = Status>,
+    U: Stream<Item = T::Item>,
+{
+    let len = buf.len();
+    source
+        .for_each(|item| {
+            let l = buf.len();
+            let remain = encode_item_rdma(&mut encoder, buf, item).unwrap(); // TODO: buf full
+            buf.put_u8(0); // TODO: enable compress
+            buf.put_u32((l - remain - HEADER_SIZE) as u32);
+            unsafe { buf.advance_mut(l - remain - HEADER_SIZE) }
+            std::future::ready(())
+        })
+        .await;
+    len - buf.len()
+}
+
+fn encode_item_rdma<T>(encoder: &mut T, mut buf: &mut [u8], item: T::Item) -> Result<usize, Status>
+where
+    T: Encoder<Error = Status>,
+{
+    unsafe { buf.advance_mut(HEADER_SIZE) };
+    encoder
+        .encode(item, &mut buf)
+        .map_err(|err| Status::internal(format!("Error encoding: {}", err)))?;
+    Ok(buf.len())
+}

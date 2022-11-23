@@ -1,19 +1,22 @@
 //! Client implementation and builder.
 
-mod rdma_channel;
 mod endpoint;
+mod rdma_channel;
 #[cfg(feature = "tls")]
 #[cfg_attr(docsrs, doc(cfg(feature = "tls")))]
 mod tls;
 
-pub use rdma_channel::RdmaChannel;
 pub use endpoint::Endpoint;
+use futures_core::Stream;
+use http::uri::PathAndQuery;
+pub use rdma_channel::{RdmaChannel, RdmaOp};
 #[cfg(feature = "tls")]
 pub use tls::ClientTlsConfig;
 
 use super::service::{Connection, DynamicServiceStream, SharedExec};
-use crate::body::BoxBody;
+use crate::Status;
 use crate::transport::Executor;
+use crate::{body::BoxBody, codec::Encoder};
 use bytes::Bytes;
 use http::{
     uri::{InvalidUri, Uri},
@@ -237,5 +240,19 @@ impl fmt::Debug for Channel {
 impl fmt::Debug for ResponseFuture {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ResponseFuture").finish()
+    }
+}
+
+#[async_trait::async_trait]
+impl RdmaOp for Channel {
+    async fn call<T, U>(&mut self, _encoder: T, _req: crate::Request<U>, _path: PathAndQuery) -> Result<Response<hyper::Body>, super::Error>
+    where
+        T: Encoder<Error = Status> + Send,
+        U: Stream<Item = T::Item> + Send,
+    {
+        unreachable!();
+    }
+    fn is_rdma(&self) -> bool {
+        false
     }
 }

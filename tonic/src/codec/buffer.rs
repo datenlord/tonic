@@ -14,6 +14,11 @@ pub struct EncodeBuf<'a> {
     buf: &'a mut BytesMut,
 }
 
+#[derive(Debug)]
+pub struct EncodeSlice<'a> {
+    buf: &'a mut [u8],
+}
+
 impl<'a> DecodeBuf<'a> {
     pub(crate) fn new(buf: &'a mut BytesMut, len: usize) -> Self {
         DecodeBuf { buf, len }
@@ -64,6 +69,41 @@ impl EncodeBuf<'_> {
 }
 
 unsafe impl BufMut for EncodeBuf<'_> {
+    #[inline]
+    fn remaining_mut(&self) -> usize {
+        self.buf.remaining_mut()
+    }
+
+    #[inline]
+    unsafe fn advance_mut(&mut self, cnt: usize) {
+        self.buf.advance_mut(cnt)
+    }
+
+    #[inline]
+    fn chunk_mut(&mut self) -> &mut UninitSlice {
+        self.buf.chunk_mut()
+    }
+}
+
+impl<'a> EncodeSlice<'a> {
+    pub(crate) fn new(buf: &'a mut [u8]) -> Self {
+        EncodeSlice { buf }
+    }
+}
+
+// impl EncodeSlice<'_> {
+//     /// Reserves capacity for at least `additional` more bytes to be inserted
+//     /// into the buffer.
+//     ///
+//     /// More than `additional` bytes may be reserved in order to avoid frequent
+//     /// reallocations. A call to `reserve` may result in an allocation.
+//     #[inline]
+//     pub fn reserve(&mut self, additional: usize) {
+//         todo!();
+//     }
+// }
+
+unsafe impl BufMut for EncodeSlice<'_> {
     #[inline]
     fn remaining_mut(&self) -> usize {
         self.buf.remaining_mut()

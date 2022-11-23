@@ -1,5 +1,4 @@
 use super::{Codec, DecodeBuf, Decoder, Encoder};
-use crate::codec::EncodeBuf;
 use crate::{Code, Status};
 use prost1::Message;
 use std::marker::PhantomData;
@@ -44,7 +43,10 @@ impl<T: Message> Encoder for ProstEncoder<T> {
     type Item = T;
     type Error = Status;
 
-    fn encode(&mut self, item: Self::Item, buf: &mut EncodeBuf<'_>) -> Result<(), Self::Error> {
+    fn encode<B>(&mut self, item: Self::Item, buf: &mut B) -> Result<(), Self::Error>
+    where
+        B: bytes::BufMut,
+    {
         item.encode(buf)
             .expect("Message only errors if not enough space");
 
@@ -78,9 +80,7 @@ fn from_decode_error(error: prost1::DecodeError) -> crate::Status {
 #[cfg(test)]
 mod tests {
     use crate::codec::compression::SingleMessageCompressionOverride;
-    use crate::codec::{
-        encode_server, DecodeBuf, Decoder, EncodeBuf, Encoder, Streaming, HEADER_SIZE,
-    };
+    use crate::codec::{encode_server, DecodeBuf, Decoder, Encoder, Streaming, HEADER_SIZE};
     use crate::Status;
     use bytes::{Buf, BufMut, BytesMut};
     use http_body::Body;
@@ -143,7 +143,10 @@ mod tests {
         type Item = Vec<u8>;
         type Error = Status;
 
-        fn encode(&mut self, item: Self::Item, buf: &mut EncodeBuf<'_>) -> Result<(), Self::Error> {
+        fn encode<B>(&mut self, item: Self::Item, buf: &mut B) -> Result<(), Self::Error>
+        where
+            B: bytes::BufMut,
+        {
             buf.put(&item[..]);
             Ok(())
         }

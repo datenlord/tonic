@@ -59,7 +59,7 @@ pub fn generate<T: Service>(
 
             impl<T> #service_ident<T>
             where
-                T: tonic::client::GrpcService<tonic::body::BoxBody>,
+                T: tonic::client::GrpcService<tonic::body::BoxBody> + tonic::transport::RdmaOp,
                 T::Error: Into<StdError>,
                 T::ResponseBody: Body<Data = Bytes> + Send  + 'static,
                 <T::ResponseBody as Body>::Error: Into<StdError> + Send,
@@ -74,18 +74,18 @@ pub fn generate<T: Service>(
                     Self { inner }
                 }
 
-                pub fn with_interceptor<F>(inner: T, interceptor: F) -> #service_ident<InterceptedService<T, F>>
-                where
-                    F: tonic::service::Interceptor,
-                    T::ResponseBody: Default,
-                    T: tonic::codegen::Service<
-                        http::Request<tonic::body::BoxBody>,
-                        Response = http::Response<<T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody>
-                    >,
-                    <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error: Into<StdError> + Send + Sync,
-                {
-                    #service_ident::new(InterceptedService::new(inner, interceptor))
-                }
+                // pub fn with_interceptor<F>(inner: T, interceptor: F) -> #service_ident<InterceptedService<T, F>>
+                // where
+                //     F: tonic::service::Interceptor,
+                //     T::ResponseBody: Default,
+                //     T: tonic::codegen::Service<
+                //         http::Request<tonic::body::BoxBody>,
+                //         Response = http::Response<<T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody>
+                //     >,
+                //     <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error: Into<StdError> + Send + Sync,
+                // {
+                //     #service_ident::new(InterceptedService::new(inner, interceptor))
+                // }
 
                 /// Compress requests with the given encoding.
                 ///
