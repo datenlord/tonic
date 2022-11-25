@@ -35,6 +35,7 @@ use crate::transport::Error;
 use self::recover_error::RecoverError;
 use super::service::{GrpcTimeout, ServerIo};
 use crate::body::BoxBody;
+use async_rdma::{LocalMrReadAccess, LocalMrWriteAccess, Rdma, RdmaBuilder};
 use bytes::Bytes;
 use futures_core::Stream;
 use futures_util::{future, ready};
@@ -43,9 +44,11 @@ use http_body::Body as _;
 use hyper::{server::accept, Body};
 use pin_project::pin_project;
 use std::{
+    alloc::Layout,
     convert::Infallible,
     fmt,
     future::Future,
+    io,
     marker::PhantomData,
     net::SocketAddr,
     pin::Pin,
@@ -596,6 +599,35 @@ impl<L> Router<L> {
             .await
     }
 
+    /// Listening for HTTP requests from addr 
+    /// while listening for RDMA requests from rdma_addr
+    pub async fn serve_with_rdma<ResBody>(
+        self,
+        addr: SocketAddr,
+        rdma_addr: SocketAddr,
+    ) -> Result<(), super::Error>
+    where
+        L: Layer<Routes>,
+        L::Service: Service<Request<Body>, Response = Response<ResBody>> + Clone + Send + 'static,
+        <<L as Layer<Routes>>::Service as Service<Request<Body>>>::Future: Send + 'static,
+        <<L as Layer<Routes>>::Service as Service<Request<Body>>>::Error: Into<crate::Error> + Send,
+        ResBody: http_body::Body<Data = Bytes> + Send + 'static,
+        ResBody::Error: Into<crate::Error>,
+    {
+        // let routes_clone = self.routes.clone();
+        tokio::spawn(rdma_serve(rdma_addr, self.routes.clone()));
+
+        let incoming = TcpIncoming::new(addr, self.server.tcp_nodelay, self.server.tcp_keepalive)
+            .map_err(super::Error::from_source)?;
+        self.server
+            .serve_with_shutdown::<_, _, future::Ready<()>, _, _, ResBody>(
+                self.routes,
+                incoming,
+                None,
+            )
+            .await
+    }
+
     /// Consume this [`Server`] creating a future that will execute the server
     /// on [tokio]'s default executor. And shutdown when the provided signal
     /// is received.
@@ -845,4 +877,56 @@ where
 
         future::ready(Ok(svc))
     }
+}
+
+// TODO: handle this error
+async fn rdma_serve(addr: SocketAddr, routes: Routes) -> Result<(), io::Error> {
+    let rdma = RdmaBuilder::default()
+        .set_max_message_length(MAX_MSG_LEN)
+        .listen(addr)
+        .await?;
+    let routes_clone = routes.clone();
+    rdma_serve_inner(&rdma, routes_clone).await?;
+    loop {
+        let rdma = rdma.listen().await?;
+        let routes = routes.clone();
+        tokio::spawn(async move { rdma_serve_inner(&rdma, routes).await });
+    }
+}
+
+const MAX_MSG_LEN: usize = 10240;
+
+// TODO: handle this error
+async fn rdma_serve_inner(rdma: &Rdma, mut routes: Routes) -> Result<(), io::Error> {
+    println!("[server] connected!");
+
+    loop {
+        let (req_mr, len) = rdma.receive_with_imm().await?;
+        let len = len.unwrap() as usize;
+        let req_vec = req_mr.as_slice()[0..len].to_vec();
+
+        // deserialize
+        let idx = req_vec.iter().position(|num| *num == 32).unwrap();
+        let uri = &req_vec[0..idx];
+        let body = hyper::Body::from(req_vec[idx + 1..len].to_vec());
+        let req = http::Request::builder()
+            .method("POST")
+            .uri(uri)
+            .body(body)
+            .unwrap();
+
+        let mut resp = routes.call(req).await.unwrap();
+        let mut resp_mr = rdma
+            .alloc_local_mr(Layout::new::<[u8; MAX_MSG_LEN]>())
+            .unwrap();
+        let mut len = 0;
+        while let Some(Ok(bytes)) = resp.data().await {
+            let resp_body = bytes.to_vec();
+            let len_body = resp_body.len();
+            resp_mr.as_mut_slice()[len..len + len_body].copy_from_slice(resp_body.as_slice());
+            len += len_body;
+        }
+        rdma.send_with_imm(&resp_mr, len as u32).await.unwrap();
+    }
+    // Ok(())
 }
