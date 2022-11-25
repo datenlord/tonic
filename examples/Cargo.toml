@@ -27,6 +27,14 @@ name = "routeguide-client"
 path = "src/routeguide/client.rs"
 
 [[bin]]
+name = "routeguide-rdma-server"
+path = "src/routeguide_rdma/server.rs"
+
+[[bin]]
+name = "routeguide-rdma-client"
+path = "src/routeguide_rdma/client.rs"
+
+[[bin]]
 name = "authentication-client"
 path = "src/authentication/client.rs"
 
