@@ -29,6 +29,7 @@ pub fn generate<T: Service>(
     );
 
     let connect = generate_connect(&service_ident, build_transport);
+    let connect_rdma = generate_connect_rdma(&service_ident, build_transport);
 
     let package = if emit_package { service.package() } else { "" };
     let path = format!(
@@ -69,6 +70,7 @@ pub fn generate<T: Service>(
             }
 
             #connect
+            #connect_rdma
 
             impl<T> #service_ident<T>
             where
@@ -140,6 +142,27 @@ fn generate_connect(service_ident: &syn::Ident, enabled: bool) -> TokenStream {
     };
 
     if enabled {
+        connect_impl
+    } else {
+        TokenStream::new()
+    }
+}
+
+#[cfg(feature = "transport")]
+fn generate_connect_rdma(service_ident: &syn::Ident, enable: bool) -> TokenStream {
+    let connect_impl = quote! {
+        impl #service_ident<tonic::transport::RdmaChannel> {
+            pub async fn connect_rdma<A>(addr: A) -> Result<Self, std::io::Error>
+            where
+                A: tonic::transport::ToSocketAddrs
+            {
+                let rdma_channel = tonic::transport::RdmaChannel::new(addr).await?;
+                Ok(Self::new(rdma_channel))
+            }
+        }
+    };
+
+    if enable {
         connect_impl
     } else {
         TokenStream::new()
