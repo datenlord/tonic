@@ -30,6 +30,14 @@ impl<T: serde::Serialize> Encoder for JsonEncoder<T> {
     fn encode(&mut self, item: Self::Item, buf: &mut EncodeBuf<'_>) -> Result<(), Self::Error> {
         serde_json::to_writer(buf.writer(), &item).map_err(|e| Status::internal(e.to_string()))
     }
+
+    fn encode_into_slice(
+        &mut self,
+        _item: Self::Item,
+        _buf: &mut [u8],
+    ) -> Result<usize, Self::Error> {
+        unimplemented!()
+    }
 }
 
 #[derive(Debug)]
@@ -40,6 +48,16 @@ impl<U: serde::de::DeserializeOwned> Decoder for JsonDecoder<U> {
     type Error = Status;
 
     fn decode(&mut self, buf: &mut DecodeBuf<'_>) -> Result<Option<Self::Item>, Self::Error> {
+        if !buf.has_remaining() {
+            return Ok(None);
+        }
+
+        let item: Self::Item =
+            serde_json::from_reader(buf.reader()).map_err(|e| Status::internal(e.to_string()))?;
+        Ok(Some(item))
+    }
+
+    fn decode_from_slice(&mut self, buf: &[u8]) -> Result<Option<Self::Item>, Self::Error> {
         if !buf.has_remaining() {
             return Ok(None);
         }

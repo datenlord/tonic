@@ -59,6 +59,10 @@ pub trait Encoder {
 
     /// Encodes a message into the provided buffer.
     fn encode(&mut self, item: Self::Item, dst: &mut EncodeBuf<'_>) -> Result<(), Self::Error>;
+
+    /// Encodes a message into the provided buffer.
+    fn encode_into_slice(&mut self, item: Self::Item, dst: &mut [u8])
+        -> Result<usize, Self::Error>;
 }
 
 /// Decodes gRPC message types
@@ -75,4 +79,9 @@ pub trait Decoder {
     /// is no need to get the length from the bytes, gRPC framing is handled
     /// for you.
     fn decode(&mut self, src: &mut DecodeBuf<'_>) -> Result<Option<Self::Item>, Self::Error>;
+
+    /// Decode a message from the buffer.
+    ///
+    /// For RDMA in-situ codec.
+    fn decode_from_slice(&mut self, src: &[u8]) -> Result<Option<Self::Item>, Self::Error>;
 }
