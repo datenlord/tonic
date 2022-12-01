@@ -149,7 +149,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let svc = RouteGuideServer::new(route_guide);
 
     Server::builder()
-        .add_service(svc)
+        .add_service(svc.clone())
+        .add_service_rdma(svc)
         .serve_with_rdma(addr, rdma_addr)
         .await?;
 
