@@ -1,19 +1,22 @@
 use crate::{
     body::{boxed, BoxBody},
+    codegen::BoxFuture,
     transport::NamedService,
+    RdmaRequest, RdmaResponse,
 };
 use axum::handler::Handler;
 use http::{Request, Response};
 use hyper::Body;
 use pin_project::pin_project;
 use std::{
+    collections::HashMap,
     convert::Infallible,
     fmt,
     future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
-use tower::ServiceExt;
+use tower::{util::BoxCloneService, ServiceExt};
 use tower_service::Service;
 
 /// A [`Service`] router.
@@ -91,5 +94,59 @@ impl Future for RoutesFuture {
             Ok(res) => Ok(res.map(boxed)).into(),
             Err(err) => match err {},
         }
+    }
+}
+
+/// RDMA router
+#[derive(Debug, Default, Clone)]
+pub struct RdmaRoutes {
+    router: HashMap<String, BoxCloneService<RdmaRequest, RdmaResponse, Infallible>>,
+}
+
+impl RdmaRoutes {
+    pub(crate) fn new<S>(svc: S) -> Self
+    where
+        S: Service<RdmaRequest, Response = RdmaResponse, Error = Infallible>
+            + NamedService
+            + Clone
+            + Send
+            + 'static,
+        S::Future: Send + 'static,
+        S::Error: Into<crate::Error> + Send,
+    {
+        let router = HashMap::new();
+        Self { router }.add_service(svc)
+    }
+
+    pub(crate) fn add_service<S>(mut self, svc: S) -> Self
+    where
+        S: Service<RdmaRequest, Response = RdmaResponse, Error = Infallible>
+            + NamedService
+            + Clone
+            + Send
+            + 'static,
+        S::Future: Send + 'static,
+        S::Error: Into<crate::Error> + Send,
+    {
+        let v = Box::new(svc);
+        self.router
+            .insert(format!("/{}", S::NAME), BoxCloneService::new(v));
+        self
+    }
+}
+
+impl Service<RdmaRequest> for RdmaRoutes {
+    type Response = RdmaResponse;
+    type Error = Infallible;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: RdmaRequest) -> Self::Future {
+        let service_name = req.service();
+        let svc = self.router.get_mut(service_name).unwrap();
+        Box::pin(svc.call(req))
     }
 }
