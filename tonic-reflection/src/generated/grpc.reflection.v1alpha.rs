@@ -366,6 +366,30 @@ pub mod server_reflection_server {
             }
         }
     }
+    impl<T> tonic::codegen::Service<tonic::RdmaRequest> for ServerReflectionServer<T>
+    where
+        T: ServerReflection,
+    {
+        type Response = tonic::RdmaResponse;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: tonic::RdmaRequest) -> Self::Future {
+            let inner = self.inner.clone();
+            let path = req.path();
+            match path {
+                "/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo" => {
+                    todo!();
+                }
+                _ => todo!(),
+            }
+        }
+    }
     impl<T: ServerReflection> Clone for ServerReflectionServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
