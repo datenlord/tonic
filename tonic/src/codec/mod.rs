@@ -13,7 +13,7 @@ mod prost;
 use crate::Status;
 use std::io;
 
-pub(crate) use self::encode::{encode_client, encode_server};
+pub(crate) use self::encode::{encode_client, encode_rdma, encode_server};
 
 pub use self::buffer::{DecodeBuf, EncodeBuf};
 pub use self::compression::{CompressionEncoding, EnabledCompressionEncodings};

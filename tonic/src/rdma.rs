@@ -56,7 +56,6 @@ impl RdmaRequest {
     pub fn body(&self) -> &[u8] {
         let pos = self.separator_index();
         let res = &self.req_mr.as_slice()[pos + 1..self.len];
-        println!("body: {:?}", res);
         res
     }
 }
