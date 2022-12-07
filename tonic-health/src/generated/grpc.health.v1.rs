@@ -161,6 +161,34 @@ pub mod health_client {
             self.inner.server_streaming(request.into_request(), path, codec).await
         }
     }
+    impl<T> HealthClient<T>
+    where
+        T: tonic::transport::RdmaService,
+    {
+        pub fn new_rdma(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub async fn check_rdma(
+            &mut self,
+            request: impl tonic::IntoRequest<super::HealthCheckRequest>,
+        ) -> Result<tonic::Response<super::HealthCheckResponse>, tonic::Status> {
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/grpc.health.v1.Health/Check",
+            );
+            self.inner.unary_rdma(request.into_request(), path, codec).await
+        }
+        pub async fn watch_rdma(
+            &mut self,
+            request: impl tonic::IntoRequest<super::HealthCheckRequest>,
+        ) -> Result<
+            tonic::Response<tonic::codec::Streaming<super::HealthCheckResponse>>,
+            tonic::Status,
+        > {
+            todo!()
+        }
+    }
 }
 /// Generated server implementations.
 pub mod health_server {

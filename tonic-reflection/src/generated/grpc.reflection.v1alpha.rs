@@ -228,6 +228,26 @@ pub mod server_reflection_client {
             self.inner.streaming(request.into_streaming_request(), path, codec).await
         }
     }
+    impl<T> ServerReflectionClient<T>
+    where
+        T: tonic::transport::RdmaService,
+    {
+        pub fn new_rdma(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub async fn server_reflection_info_rdma(
+            &mut self,
+            request: impl tonic::IntoStreamingRequest<
+                Message = super::ServerReflectionRequest,
+            >,
+        ) -> Result<
+            tonic::Response<tonic::codec::Streaming<super::ServerReflectionResponse>>,
+            tonic::Status,
+        > {
+            todo!()
+        }
+    }
 }
 /// Generated server implementations.
 pub mod server_reflection_server {
