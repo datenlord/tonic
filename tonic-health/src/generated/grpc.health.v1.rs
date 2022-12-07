@@ -161,6 +161,34 @@ pub mod health_client {
             self.inner.server_streaming(request.into_request(), path, codec).await
         }
     }
+    impl<T> HealthClient<T>
+    where
+        T: tonic::transport::RdmaService,
+    {
+        pub fn new_rdma(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub async fn check_rdma(
+            &mut self,
+            request: impl tonic::IntoRequest<super::HealthCheckRequest>,
+        ) -> Result<tonic::Response<super::HealthCheckResponse>, tonic::Status> {
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/grpc.health.v1.Health/Check",
+            );
+            self.inner.unary_rdma(request.into_request(), path, codec).await
+        }
+        pub async fn watch_rdma(
+            &mut self,
+            request: impl tonic::IntoRequest<super::HealthCheckRequest>,
+        ) -> Result<
+            tonic::Response<tonic::codec::Streaming<super::HealthCheckResponse>>,
+            tonic::Status,
+        > {
+            todo!()
+        }
+    }
 }
 /// Generated server implementations.
 pub mod health_server {
@@ -349,6 +377,68 @@ pub mod health_server {
                         )
                     })
                 }
+            }
+        }
+    }
+    impl<T> tonic::codegen::Service<tonic::RdmaRequest> for HealthServer<T>
+    where
+        T: Health,
+    {
+        type Response = tonic::RdmaResponse;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: tonic::RdmaRequest) -> Self::Future {
+            let inner = self.inner.clone();
+            let path = req.path();
+            match path {
+                "/grpc.health.v1.Health/Check" => {
+                    #[allow(non_camel_case_types)]
+                    struct CheckSvc<T: Health>(pub Arc<T>);
+                    impl<
+                        T: Health,
+                    > tonic::server::UnaryService<super::HealthCheckRequest>
+                    for CheckSvc<T> {
+                        type Response = super::HealthCheckResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::HealthCheckRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).check(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CheckSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary_rdma(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/grpc.health.v1.Health/Watch" => {
+                    todo!();
+                }
+                _ => todo!(),
             }
         }
     }

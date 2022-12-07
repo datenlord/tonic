@@ -105,6 +105,12 @@ impl Decoder for MockDecoder {
         buf.advance(self.message_size);
         Ok(Some(out))
     }
+
+    fn decode_from_slice(&mut self, mut buf: &[u8]) -> Result<Option<Self::Item>, Self::Error> {
+        let out = Vec::from(buf.chunk());
+        buf.advance(self.message_size);
+        Ok(Some(out))
+    }
 }
 
 fn make_payload(message_length: usize, message_count: usize) -> Bytes {

@@ -1,12 +1,14 @@
 use crate::codec::compression::{
     CompressionEncoding, EnabledCompressionEncodings, SingleMessageCompressionOverride,
 };
+use crate::codec::{Decoder, Encoder};
 use crate::{
     body::BoxBody,
     codec::{encode_server, Codec, Streaming},
     server::{ClientStreamingService, ServerStreamingService, StreamingService, UnaryService},
     Code, Request, Status,
 };
+use crate::{RdmaRequest, RdmaResponse};
 use futures_core::TryStream;
 use futures_util::{future, stream, TryStreamExt};
 use http_body::Body;
@@ -362,6 +364,43 @@ where
             request.headers(),
             self.accept_compression_encodings,
         )
+    }
+
+    /// Handle a single unary request.
+    pub async fn unary_rdma<'a, S>(&mut self, mut service: S, req: RdmaRequest) -> RdmaResponse
+    where
+        S: UnaryService<T::Decode, Response = T::Encode>,
+    {
+        // decode request
+        let request = self.map_request_rdma(&req).unwrap();
+        // call service
+        let response = service.call(request).await.unwrap();
+        // encode response
+        self.map_response_rdma(response, RdmaResponse::from_req(req))
+    }
+
+    fn map_request_rdma(&mut self, req: &RdmaRequest) -> Result<Request<T::Decode>, Status> {
+        let message = self
+            .codec
+            .decoder()
+            .decode_from_slice(&req.body()[5..])
+            .unwrap()
+            .unwrap();
+        Ok(Request::new(message))
+    }
+
+    fn map_response_rdma(
+        &mut self,
+        response: crate::Response<<T as Codec>::Encode>,
+        mut resp: RdmaResponse,
+    ) -> RdmaResponse {
+        let inner = response.into_inner();
+        resp.len = self
+            .codec
+            .encoder()
+            .encode_into_slice(inner, &mut resp.buf())
+            .unwrap();
+        resp
     }
 }
 

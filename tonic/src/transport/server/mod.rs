@@ -9,7 +9,7 @@ mod tls;
 #[cfg(unix)]
 mod unix;
 
-pub use super::service::Routes;
+pub use super::service::{RdmaRoutes, Routes};
 pub use crate::server::NamedService;
 pub use conn::{Connected, TcpConnectInfo};
 #[cfg(feature = "tls")]
@@ -34,7 +34,8 @@ use crate::transport::Error;
 
 use self::recover_error::RecoverError;
 use super::service::{GrpcTimeout, ServerIo};
-use crate::body::BoxBody;
+use crate::{body::BoxBody, RdmaRequest, RdmaResponse};
+use async_rdma::{Rdma, RdmaBuilder};
 use bytes::Bytes;
 use futures_core::Stream;
 use futures_util::{future, ready};
@@ -43,9 +44,11 @@ use http_body::Body as _;
 use hyper::{server::accept, Body};
 use pin_project::pin_project;
 use std::{
+    alloc::Layout,
     convert::Infallible,
     fmt,
     future::Future,
+    io,
     marker::PhantomData,
     net::SocketAddr,
     pin::Pin,
@@ -124,6 +127,7 @@ impl Default for Server<Identity> {
 pub struct Router<L = Identity> {
     server: Server<L>,
     routes: Routes,
+    rdma_routes: RdmaRoutes,
 }
 
 impl<S: NamedService, T> NamedService for Either<S, T> {
@@ -351,7 +355,7 @@ impl<L> Server<L> {
         S::Future: Send + 'static,
         L: Clone,
     {
-        Router::new(self.clone(), Routes::new(svc))
+        Router::new(self.clone(), Routes::new(svc), RdmaRoutes::default())
     }
 
     /// Create a router with the optional `S` typed service as the first service.
@@ -373,7 +377,23 @@ impl<L> Server<L> {
         L: Clone,
     {
         let routes = svc.map(Routes::new).unwrap_or_default();
-        Router::new(self.clone(), routes)
+        Router::new(self.clone(), routes, RdmaRoutes::default())
+    }
+
+    /// Create a router with the `S` typed service as the first service.
+    ///
+    ///
+    pub fn add_service_rdma<S>(&mut self, svc: S) -> Router<L>
+    where
+        S: Service<RdmaRequest, Response = RdmaResponse, Error = Infallible>
+            + NamedService
+            + Clone
+            + Send
+            + 'static,
+        S::Future: Send + 'static,
+        L: Clone,
+    {
+        Router::new(self.clone(), Routes::default(), RdmaRoutes::new(svc))
     }
 
     /// Set the [Tower] [`Layer`] all services will be wrapped in.
@@ -530,8 +550,12 @@ impl<L> Server<L> {
 }
 
 impl<L> Router<L> {
-    pub(crate) fn new(server: Server<L>, routes: Routes) -> Self {
-        Self { server, routes }
+    pub(crate) fn new(server: Server<L>, routes: Routes, rdma_routes: RdmaRoutes) -> Self {
+        Self {
+            server,
+            routes,
+            rdma_routes,
+        }
     }
 }
 
@@ -571,6 +595,20 @@ impl<L> Router<L> {
         self
     }
 
+    /// Add a new service to this router.
+    pub fn add_service_rdma<S>(mut self, svc: S) -> Self
+    where
+        S: Service<RdmaRequest, Response = RdmaResponse, Error = Infallible>
+            + NamedService
+            + Clone
+            + Send
+            + 'static,
+        S::Future: Send + 'static,
+    {
+        self.rdma_routes = self.rdma_routes.add_service(svc);
+        self
+    }
+
     /// Consume this [`Server`] creating a future that will execute the server
     /// on [tokio]'s default executor.
     ///
@@ -585,6 +623,35 @@ impl<L> Router<L> {
         ResBody: http_body::Body<Data = Bytes> + Send + 'static,
         ResBody::Error: Into<crate::Error>,
     {
+        let incoming = TcpIncoming::new(addr, self.server.tcp_nodelay, self.server.tcp_keepalive)
+            .map_err(super::Error::from_source)?;
+        self.server
+            .serve_with_shutdown::<_, _, future::Ready<()>, _, _, ResBody>(
+                self.routes,
+                incoming,
+                None,
+            )
+            .await
+    }
+
+    /// Listening for HTTP requests from addr
+    /// while listening for RDMA requests from rdma_addr
+    pub async fn serve_with_rdma<ResBody>(
+        self,
+        addr: SocketAddr,
+        rdma_addr: SocketAddr,
+    ) -> Result<(), super::Error>
+    where
+        L: Layer<Routes>,
+        L::Service: Service<Request<Body>, Response = Response<ResBody>> + Clone + Send + 'static,
+        <<L as Layer<Routes>>::Service as Service<Request<Body>>>::Future: Send + 'static,
+        <<L as Layer<Routes>>::Service as Service<Request<Body>>>::Error: Into<crate::Error> + Send,
+        ResBody: http_body::Body<Data = Bytes> + Send + 'static,
+        ResBody::Error: Into<crate::Error>,
+    {
+        // let routes_clone = self.routes.clone();
+        tokio::spawn(rdma_serve(rdma_addr, self.rdma_routes.clone()));
+
         let incoming = TcpIncoming::new(addr, self.server.tcp_nodelay, self.server.tcp_keepalive)
             .map_err(super::Error::from_source)?;
         self.server
@@ -845,4 +912,44 @@ where
 
         future::ready(Ok(svc))
     }
+}
+
+// TODO: handle this error
+async fn rdma_serve(addr: SocketAddr, routes: RdmaRoutes) -> Result<(), io::Error> {
+    let rdma = Arc::new(
+        RdmaBuilder::default()
+            .set_max_message_length(MAX_MSG_LEN)
+            .listen(addr)
+            .await?,
+    );
+    tokio::spawn(rdma_serve_inner(Arc::clone(&rdma), routes.clone()));
+    loop {
+        let rdma = Arc::new(rdma.listen().await?);
+        let routes = routes.clone();
+        tokio::spawn(rdma_serve_inner(rdma, routes.clone()));
+    }
+}
+
+const MAX_MSG_LEN: usize = 10240;
+
+// TODO: handle this error
+async fn rdma_serve_inner(rdma: Arc<Rdma>, mut routes: RdmaRoutes) -> Result<(), io::Error> {
+    println!("[server] connected!");
+
+    loop {
+        let (req_mr, len) = rdma.receive_with_imm().await?;
+        let len = len.unwrap() as usize;
+
+        let resp_mr = rdma.alloc_local_mr(Layout::new::<[u8; 1024]>()).unwrap();
+
+        let resp = routes
+            .call(RdmaRequest::new(req_mr, len, resp_mr))
+            .await
+            .unwrap();
+
+        rdma.send_with_imm(&resp.resp_mr, resp.len as u32)
+            .await
+            .unwrap();
+    }
+    // Ok(())
 }

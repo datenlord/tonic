@@ -19,6 +19,7 @@ pub fn generate<T: Service>(
     disable_comments: &HashSet<String>,
 ) -> TokenStream {
     let methods = generate_methods(service, proto_path, compile_well_known_types);
+    let methods_rdma = generate_methods_rdma(service, proto_path, compile_well_known_types);
 
     let server_service = quote::format_ident!("{}Server", service.name());
     let server_trait = quote::format_ident!("{}", service.name());
@@ -144,6 +145,30 @@ pub fn generate<T: Service>(
                                .body(empty_body())
                                .unwrap())
                         }),
+                    }
+                }
+            }
+
+            impl<T> tonic::codegen::Service<tonic::RdmaRequest> for #server_service<T>
+                where
+                    T: #server_trait,
+            {
+                type Response = tonic::RdmaResponse;
+                type Error = std::convert::Infallible;
+                type Future = BoxFuture<Self::Response, Self::Error>;
+
+                fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+                    Poll::Ready(Ok(()))
+                }
+
+                fn call(&mut self, req: tonic::RdmaRequest) -> Self::Future {
+                    let inner = self.inner.clone();
+
+                    let path = req.path();
+                    match path {
+                        #methods_rdma
+
+                        _ => todo!(),
                     }
                 }
             }
@@ -367,6 +392,102 @@ fn generate_methods<T: Service>(
     }
 
     stream
+}
+
+fn generate_methods_rdma<T: Service>(
+    service: &T,
+    proto_path: &str,
+    compile_well_known_types: bool,
+) -> TokenStream {
+    let mut stream = TokenStream::new();
+
+    for method in service.methods() {
+        let path = format!(
+            "/{}{}{}/{}",
+            service.package(),
+            if service.package().is_empty() {
+                ""
+            } else {
+                "."
+            },
+            service.identifier(),
+            method.identifier()
+        );
+        let method_path = Lit::Str(LitStr::new(&path, Span::call_site()));
+        let ident = quote::format_ident!("{}", method.name());
+        let server_trait = quote::format_ident!("{}", service.name());
+
+        let method_stream = match (method.client_streaming(), method.server_streaming()) {
+            (false, false) => generate_unary_rdma(
+                method,
+                proto_path,
+                compile_well_known_types,
+                ident,
+                server_trait,
+            ),
+            _ => quote! {
+                todo!();
+            }
+        };
+
+        let method = quote! {
+            #method_path => {
+                #method_stream
+            }
+        };
+        stream.extend(method);
+    }
+
+    stream
+}
+
+fn generate_unary_rdma<T: Method>(
+    method: &T,
+    proto_path: &str,
+    compile_well_known_types: bool,
+    method_ident: Ident,
+    server_trait: Ident,
+) -> TokenStream {
+    let codec_name = syn::parse_str::<syn::Path>(method.codec_path()).unwrap();
+
+    let service_ident = quote::format_ident!("{}Svc", method.identifier());
+
+    let (request, response) = method.request_response_name(proto_path, compile_well_known_types);
+
+    quote! {
+        #[allow(non_camel_case_types)]
+        struct #service_ident<T: #server_trait >(pub Arc<T>);
+
+        impl<T: #server_trait> tonic::server::UnaryService<#request> for #service_ident<T> {
+            type Response = #response;
+            type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+
+            fn call(&mut self, request: tonic::Request<#request>) -> Self::Future {
+                let inner = self.0.clone();
+                let fut = async move {
+                    (*inner).#method_ident(request).await
+                };
+                Box::pin(fut)
+            }
+        }
+
+        let accept_compression_encodings = self.accept_compression_encodings;
+        let send_compression_encodings = self.send_compression_encodings;
+        let inner = self.inner.clone();
+        let fut = async move {
+            let inner = inner.0;
+            let method = #service_ident(inner);
+            let codec = #codec_name::default();
+
+            let mut grpc = tonic::server::Grpc::new(codec)
+                .apply_compression_config(accept_compression_encodings, send_compression_encodings);
+
+            let res = grpc.unary_rdma(method, req).await;
+            Ok(res)
+        };
+
+        Box::pin(fut)
+    }
 }
 
 fn generate_unary<T: Method>(

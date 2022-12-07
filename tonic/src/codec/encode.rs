@@ -1,9 +1,11 @@
 use super::compression::{compress, CompressionEncoding, SingleMessageCompressionOverride};
 use super::{EncodeBuf, Encoder, HEADER_SIZE};
 use crate::{Code, Status};
+use async_rdma::{LocalMr, LocalMrWriteAccess};
 use bytes::{BufMut, Bytes, BytesMut};
 use futures_core::{Stream, TryStream};
 use futures_util::{ready, StreamExt, TryStreamExt};
+use http::uri::PathAndQuery;
 use http::HeaderMap;
 use http_body::Body;
 use pin_project::pin_project;
@@ -246,4 +248,33 @@ where
     ) -> Poll<Result<Option<HeaderMap>, Status>> {
         Poll::Ready(self.project().state.trailers())
     }
+}
+
+/// encode `source` and `path` into `mr`
+pub(crate) async fn encode_rdma<T, U>(
+    mut encoder: T,
+    source: U,
+    path: PathAndQuery,
+    mr: &mut LocalMr,
+) -> usize
+where
+    T: Encoder<Error = Status>,
+    U: Stream<Item = T::Item>,
+{
+    let mut buf = unsafe { mr.as_mut_slice_unchecked() };
+    // path
+    let path = path.as_str();
+    let mut len = path.len();
+    buf[0..len].copy_from_slice(path.as_bytes());
+    unsafe { buf.advance_mut(len) };
+    buf.put_u8(' ' as u8);
+    len += 1;
+    // body
+    source
+        .for_each(|item| {
+            len += encoder.encode_into_slice(item, &mut buf).unwrap();
+            std::future::ready(())
+        })
+        .await;
+    len
 }

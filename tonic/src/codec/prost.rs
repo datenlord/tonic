@@ -1,6 +1,7 @@
 use super::{Codec, DecodeBuf, Decoder, Encoder};
 use crate::codec::EncodeBuf;
 use crate::{Code, Status};
+use bytes::BufMut;
 use prost1::Message;
 use std::marker::PhantomData;
 
@@ -50,6 +51,21 @@ impl<T: Message> Encoder for ProstEncoder<T> {
 
         Ok(())
     }
+
+    fn encode_into_slice(
+        &mut self,
+        item: Self::Item,
+        mut buf: &mut [u8],
+    ) -> Result<usize, Self::Error> {
+        let len = item.encoded_len();
+        buf.put_u8(0);
+        buf.put_u32(len as u32);
+
+        item.encode(&mut buf)
+            .expect("Message only errors if not enough space");
+
+        Ok(len + 5)
+    }
 }
 
 /// A [`Decoder`] that knows how to decode `U`.
@@ -61,6 +77,14 @@ impl<U: Message + Default> Decoder for ProstDecoder<U> {
     type Error = Status;
 
     fn decode(&mut self, buf: &mut DecodeBuf<'_>) -> Result<Option<Self::Item>, Self::Error> {
+        let item = Message::decode(buf)
+            .map(Option::Some)
+            .map_err(from_decode_error)?;
+
+        Ok(item)
+    }
+
+    fn decode_from_slice(&mut self, buf: &[u8]) -> Result<Option<Self::Item>, Self::Error> {
         let item = Message::decode(buf)
             .map(Option::Some)
             .map_err(from_decode_error)?;
@@ -180,6 +204,14 @@ mod tests {
             buf.put(&item[..]);
             Ok(())
         }
+
+        fn encode_into_slice(
+            &mut self,
+            _item: Self::Item,
+            _buf: &mut [u8],
+        ) -> Result<usize, Self::Error> {
+            unimplemented!()
+        }
     }
 
     #[derive(Debug, Clone, Default)]
@@ -190,6 +222,12 @@ mod tests {
         type Error = Status;
 
         fn decode(&mut self, buf: &mut DecodeBuf<'_>) -> Result<Option<Self::Item>, Self::Error> {
+            let out = Vec::from(buf.chunk());
+            buf.advance(LEN);
+            Ok(Some(out))
+        }
+
+        fn decode_from_slice(&mut self, mut buf: &[u8]) -> Result<Option<Self::Item>, Self::Error> {
             let out = Vec::from(buf.chunk());
             buf.advance(LEN);
             Ok(Some(out))

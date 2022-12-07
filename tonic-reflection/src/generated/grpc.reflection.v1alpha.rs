@@ -23,7 +23,7 @@ pub mod server_reflection_request {
         FileByFilename(::prost::alloc::string::String),
         /// Find the proto file that declares the given fully-qualified symbol name.
         /// This field should be a fully-qualified symbol name
-        /// (e.g. <package>.<service>\\[.<method>\\] or <package>.<type>).
+        /// (e.g. <package>.<service>\[.<method>\] or <package>.<type>).
         #[prost(string, tag = "4")]
         FileContainingSymbol(::prost::alloc::string::String),
         /// Find the proto file which defines an extension extending the given
@@ -228,6 +228,26 @@ pub mod server_reflection_client {
             self.inner.streaming(request.into_streaming_request(), path, codec).await
         }
     }
+    impl<T> ServerReflectionClient<T>
+    where
+        T: tonic::transport::RdmaService,
+    {
+        pub fn new_rdma(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub async fn server_reflection_info_rdma(
+            &mut self,
+            request: impl tonic::IntoStreamingRequest<
+                Message = super::ServerReflectionRequest,
+            >,
+        ) -> Result<
+            tonic::Response<tonic::codec::Streaming<super::ServerReflectionResponse>>,
+            tonic::Status,
+        > {
+            todo!()
+        }
+    }
 }
 /// Generated server implementations.
 pub mod server_reflection_server {
@@ -363,6 +383,30 @@ pub mod server_reflection_server {
                         )
                     })
                 }
+            }
+        }
+    }
+    impl<T> tonic::codegen::Service<tonic::RdmaRequest> for ServerReflectionServer<T>
+    where
+        T: ServerReflection,
+    {
+        type Response = tonic::RdmaResponse;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: tonic::RdmaRequest) -> Self::Future {
+            let inner = self.inner.clone();
+            let path = req.path();
+            match path {
+                "/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo" => {
+                    todo!();
+                }
+                _ => todo!(),
             }
         }
     }

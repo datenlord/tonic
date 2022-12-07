@@ -51,6 +51,7 @@ channel = [
 # harness = false
 
 [dependencies]
+async-rdma = "0.4"
 base64 = "0.13"
 bytes = "1.0"
 futures-core = {version = "0.3", default-features = false}

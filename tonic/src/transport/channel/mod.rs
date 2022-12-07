@@ -1,10 +1,12 @@
 //! Client implementation and builder.
 
+mod rdma_channel;
 mod endpoint;
 #[cfg(feature = "tls")]
 #[cfg_attr(docsrs, doc(cfg(feature = "tls")))]
 mod tls;
 
+pub use rdma_channel::{ RdmaChannel, RdmaService };
 pub use endpoint::Endpoint;
 #[cfg(feature = "tls")]
 pub use tls::ClientTlsConfig;
