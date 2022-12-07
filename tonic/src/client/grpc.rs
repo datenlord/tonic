@@ -1,4 +1,6 @@
 use crate::codec::compression::{CompressionEncoding, EnabledCompressionEncodings};
+use crate::codec::encode_rdma;
+use crate::transport::RdmaService;
 use crate::{
     body::BoxBody,
     client::GrpcService,
@@ -6,6 +8,7 @@ use crate::{
     request::SanitizeHeaders,
     Code, Request, Response, Status,
 };
+use async_rdma::LocalMrReadAccess;
 use futures_core::Stream;
 use futures_util::{future, stream, TryStreamExt};
 use http::{
@@ -285,6 +288,39 @@ impl<T> Grpc<T> {
         });
 
         Ok(Response::from_http(response))
+    }
+
+    /// Send a single unary gRPC request through RDMA.
+    pub async fn unary_rdma<M1, M2, C>(
+        &mut self,
+        request: Request<M1>,
+        path: PathAndQuery,
+        mut codec: C,
+    ) -> Result<Response<M2>, Status>
+    where
+        T: RdmaService,
+        C: Codec<Encode = M1, Decode = M2>,
+        M1: Send + Sync + 'static,
+        M2: Send + Sync + 'static,
+    {
+        let request = request.map(|m| stream::once(future::ready(m)));
+
+        // encode into MR.
+        let mut req_mr = self.inner.alloc_mr().unwrap();
+        let len = encode_rdma(codec.encoder(), request.into_inner(), path, &mut req_mr).await;
+
+        // send request, recv response
+        let (resp_mr, len) = self.inner.call(req_mr, len).await;
+        let len = len.unwrap() as usize;
+
+        // decode response from mr
+        let item = codec
+            .decoder()
+            .decode_from_slice(&resp_mr.as_slice()[5..len])
+            .unwrap()
+            .unwrap();
+
+        Ok(Response::new(item))
     }
 }
 

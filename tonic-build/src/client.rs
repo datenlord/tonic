@@ -27,6 +27,13 @@ pub fn generate<T: Service>(
         compile_well_known_types,
         disable_comments,
     );
+    let methods_rdma = generate_methods_rdma(
+        service,
+        emit_package,
+        proto_path,
+        compile_well_known_types,
+        disable_comments,
+    );
 
     let connect = generate_connect(&service_ident, build_transport);
     let connect_rdma = generate_connect_rdma(&service_ident, build_transport);
@@ -121,6 +128,19 @@ pub fn generate<T: Service>(
 
                 #methods
             }
+
+            impl<T> #service_ident<T>
+            where
+                T: tonic::transport::RdmaService,
+            {
+                pub fn new_rdma(inner: T) -> Self {
+                    let inner = tonic::client::Grpc::new(inner);
+                    Self { inner }
+                }
+
+                #methods_rdma
+            }
+
         }
     }
 }
@@ -157,7 +177,7 @@ fn generate_connect_rdma(service_ident: &syn::Ident, enable: bool) -> TokenStrea
                 A: tonic::transport::ToSocketAddrs
             {
                 let rdma_channel = tonic::transport::RdmaChannel::new(addr).await?;
-                Ok(Self::new(rdma_channel))
+                Ok(Self::new_rdma(rdma_channel))
             }
         }
     };
@@ -218,6 +238,139 @@ fn generate_methods<T: Service>(
     }
 
     stream
+}
+
+fn generate_methods_rdma<T: Service>(
+    service: &T,
+    emit_package: bool,
+    proto_path: &str,
+    compile_well_known_types: bool,
+    disable_comments: &HashSet<String>,
+) -> TokenStream {
+    let mut stream = TokenStream::new();
+    let package = if emit_package { service.package() } else { "" };
+
+    for method in service.methods() {
+        let path = format!(
+            "/{}{}{}/{}",
+            package,
+            if package.is_empty() { "" } else { "." },
+            service.identifier(),
+            method.identifier()
+        );
+
+        // if !disable_comments.contains(&format!(
+        //     "{}{}{}.{}",
+        //     package,
+        //     if package.is_empty() { "" } else { "." },
+        //     service.identifier(),
+        //     method.identifier()
+        // )) {
+        //     stream.extend(generate_doc_comments(method.comment()));
+        // }
+
+        let method = match (method.client_streaming(), method.server_streaming()) {
+            (false, false) => {
+                generate_unary_rdma(method, proto_path, compile_well_known_types, path)
+            }
+            (false, true) => {
+                generate_server_streaming_rdma(method, proto_path, compile_well_known_types, path)
+            }
+            (true, false) => {
+                generate_client_streaming_rdma(method, proto_path, compile_well_known_types, path)
+            }
+            (true, true) => generate_streaming_rdma(method, proto_path, compile_well_known_types, path),
+        };
+
+        stream.extend(method);
+    }
+
+    stream
+}
+
+fn generate_unary_rdma<T: Method>(
+    method: &T,
+    proto_path: &str,
+    compile_well_known_types: bool,
+    path: String,
+) -> TokenStream {
+    let codec_name = syn::parse_str::<syn::Path>(method.codec_path()).unwrap();
+    let ident = format_ident!("{}_rdma", method.name());
+    let (request, response) = method.request_response_name(proto_path, compile_well_known_types);
+
+    quote! {
+        pub async fn #ident(
+            &mut self,
+            request: impl tonic::IntoRequest<#request>,
+        ) -> Result<tonic::Response<#response>, tonic::Status> {
+           let codec = #codec_name::default();
+           let path = http::uri::PathAndQuery::from_static(#path);
+           self.inner.unary_rdma(request.into_request(), path, codec).await
+        }
+    }
+}
+
+fn generate_server_streaming_rdma<T: Method>(
+    method: &T,
+    proto_path: &str,
+    compile_well_known_types: bool,
+    path: String,
+) -> TokenStream {
+    let codec_name = syn::parse_str::<syn::Path>(method.codec_path()).unwrap();
+    let ident = format_ident!("{}_rdma", method.name());
+
+    let (request, response) = method.request_response_name(proto_path, compile_well_known_types);
+
+    quote! {
+        pub async fn #ident(
+            &mut self,
+            request: impl tonic::IntoRequest<#request>,
+        ) -> Result<tonic::Response<tonic::codec::Streaming<#response>>, tonic::Status> {
+            todo!()
+        }
+    }
+}
+
+fn generate_client_streaming_rdma<T: Method>(
+    method: &T,
+    proto_path: &str,
+    compile_well_known_types: bool,
+    path: String,
+) -> TokenStream {
+    let codec_name = syn::parse_str::<syn::Path>(method.codec_path()).unwrap();
+    let ident = format_ident!("{}_rdma", method.name());
+
+    let (request, response) = method.request_response_name(proto_path, compile_well_known_types);
+
+    quote! {
+        pub async fn #ident(
+            &mut self,
+            request: impl tonic::IntoStreamingRequest<Message = #request>
+        ) -> Result<tonic::Response<#response>, tonic::Status> {
+            todo!()
+        }
+    }
+}
+
+fn generate_streaming_rdma<T: Method>(
+    method: &T,
+    proto_path: &str,
+    compile_well_known_types: bool,
+    path: String,
+) -> TokenStream {
+    let codec_name = syn::parse_str::<syn::Path>(method.codec_path()).unwrap();
+    let ident = format_ident!("{}_rdma", method.name());
+
+    let (request, response) = method.request_response_name(proto_path, compile_well_known_types);
+
+    quote! {
+        pub async fn #ident(
+            &mut self,
+            request: impl tonic::IntoStreamingRequest<Message = #request>
+        ) -> Result<tonic::Response<tonic::codec::Streaming<#response>>, tonic::Status> {
+            todo!()
+        }
+    }
 }
 
 fn generate_unary<T: Method>(

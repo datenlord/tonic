@@ -6,7 +6,7 @@ mod endpoint;
 #[cfg_attr(docsrs, doc(cfg(feature = "tls")))]
 mod tls;
 
-pub use rdma_channel::RdmaChannel;
+pub use rdma_channel::{ RdmaChannel, RdmaService };
 pub use endpoint::Endpoint;
 #[cfg(feature = "tls")]
 pub use tls::ClientTlsConfig;

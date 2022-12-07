@@ -28,7 +28,7 @@ async fn print_features(client: &mut RouteGuideClient<RdmaChannel>) -> Result<()
     };
 
     let mut stream = client
-        .list_features(Request::new(rectangle))
+        .list_features_rdma(Request::new(rectangle))
         .await?
         .into_inner();
 
@@ -51,7 +51,7 @@ async fn run_record_route(client: &mut RouteGuideClient<RdmaChannel>) -> Result<
     println!("Traversing {} points", points.len());
     let request = Request::new(stream::iter(points));
 
-    match client.record_route(request).await {
+    match client.record_route_rdma(request).await {
         Ok(response) => println!("SUMMARY: {:?}", response.into_inner()),
         Err(e) => println!("something went wrong: {:?}", e),
     }
@@ -80,7 +80,7 @@ async fn run_route_chat(client: &mut RouteGuideClient<RdmaChannel>) -> Result<()
         }
     };
 
-    let response = client.route_chat(Request::new(outbound)).await?;
+    let response = client.route_chat_rdma(Request::new(outbound)).await?;
     let mut inbound = response.into_inner();
 
     while let Some(note) = inbound.message().await? {
@@ -97,7 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("*** SIMPLE RPC ***");
     let response = client
-        .get_feature(Request::new(Point {
+        .get_feature_rdma(Request::new(Point {
             latitude: 409_146_138,
             longitude: -746_188_906,
         }))
